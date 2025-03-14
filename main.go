@@ -57,12 +57,17 @@ func mainE(args []string) error {
 		return err
 	}
 
-	fmt.Printf("fly --target %s get-pipeline --pipeline %s --team %s", teamName, pipelineWithInstanceVars, target.Team().Name())
-	fmt.Print(" | vipe | ")
-	fmt.Printf("fly --target %s set-pipeline --pipeline %s --team %s --config - %s", teamName, pipeline, target.Team().Name(), instanceVars)
-	fmt.Println()
+	script := fmt.Sprintf("fly --target %s get-pipeline --pipeline %s --team %s | vipe --suffix yaml | fly --target %s set-pipeline --pipeline %s --team %s --config %s", teamName, pipelineWithInstanceVars, target.Team().Name(), teamName, pipeline, target.Team().Name(), instanceVars)
 
+	fmt.Println(script)
+
+	// TODO check if vipe is available
+	// TODO provide an option to just print the pipeline
 	// TODO launch it
+	// if err := syscall.Exec(pathToFly, args, os.Environ()); err != nil {
+	// 	fmt.Fprintf(os.Stderr, "apron-bus: Error - could not invoke %v: %v\n", pathToFly, err)
+	// 	os.Exit(1)
+	// }
 
 	return nil
 }
@@ -74,33 +79,39 @@ func pipelineWithInstanceVars(pipeline string, query url.Values) (string, error)
 
 	if len(query) > 0 {
 		pipelineWithInstanceVars.WriteString("/")
-	}
 
-	for k, v := range query {
-		if !strings.HasPrefix(k, "vars.") {
-			continue
+		var instanceArgs []string
+
+		for k, v := range query {
+			if !strings.HasPrefix(k, "vars.") {
+				continue
+			}
+
+			if len(v) > 1 {
+				return "", fmt.Errorf("parsing instance variables: expecting ecactly one value for %s, but found %d", k, len(v))
+			}
+
+			var pipelineWithInstanceVar strings.Builder
+
+			pipelineWithInstanceVar.WriteString(strings.TrimPrefix(k, "vars."))
+			pipelineWithInstanceVar.WriteString(":")
+			pipelineWithInstanceVar.WriteString(v[0])
+
+			instanceArgs = append(instanceArgs, pipelineWithInstanceVar.String())
 		}
 
-		if len(v) > 1 {
-			return "", fmt.Errorf("parsing instance variables: expecting ecactly one value for %s, but found %d", k, len(v))
-		}
-
-		pipelineWithInstanceVars.WriteString(strings.TrimPrefix(k, "vars."))
-		pipelineWithInstanceVars.WriteString(":")
-		pipelineWithInstanceVars.WriteString(v[0])
-
-		// TODO Add comma if more than one
+		pipelineWithInstanceVars.WriteString(strings.Join(instanceArgs, ","))
 	}
 
 	return pipelineWithInstanceVars.String(), nil
 }
 
 func instanceVars(query url.Values) (string, error) {
-	var instanceArgs strings.Builder
-
 	if len(query) == 0 {
 		return "", nil
 	}
+
+	var instanceArgs []string
 
 	for k, v := range query {
 		if !strings.HasPrefix(k, "vars.") {
@@ -111,15 +122,17 @@ func instanceVars(query url.Values) (string, error) {
 			return "", fmt.Errorf("parsing instance variables: expecting ecactly one value for %s, but found %d", k, len(v))
 		}
 
-		instanceArgs.WriteString("--instance-var ")
-		instanceArgs.WriteString(strings.TrimPrefix(k, "vars."))
-		instanceArgs.WriteString("=")
-		instanceArgs.WriteString(v[0])
+		var instanceArg strings.Builder
 
-		// TODO Add space if more than one
+		instanceArg.WriteString("--instance-var ")
+		instanceArg.WriteString(strings.TrimPrefix(k, "vars."))
+		instanceArg.WriteString("=")
+		instanceArg.WriteString(v[0])
+
+		instanceArgs = append(instanceArgs, instanceArg.String())
 	}
 
-	return instanceArgs.String(), nil
+	return strings.Join(instanceArgs, " "), nil
 }
 
 // copied from https://github.com/concourse/concourse/blob/6984e4d30a35f378d31d5897c5a6da2606b62f58/fly/commands/hijack.go/#L239-L252
