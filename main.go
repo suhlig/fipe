@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/concourse/concourse/fly/rc"
-	"github.com/suhlig/fly-vipe/fly"
-	"github.com/suhlig/fly-vipe/pipeline"
+	"github.com/suhlig/fipe/fly"
+	"github.com/suhlig/fipe/pipeline"
 )
 
 func main() {

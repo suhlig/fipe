@@ -1,4 +1,4 @@
-module github.com/suhlig/fly-vipe
+module github.com/suhlig/fipe
 
 go 1.24.0
 
