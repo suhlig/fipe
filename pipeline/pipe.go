@@ -18,7 +18,6 @@ func NewPipeline(commands ...*exec.Cmd) *Pipeline {
 	return &Pipeline{commands: commands}
 }
 
-// Modified version of https://stackoverflow.com/a/26541826
 func (p Pipeline) String() string {
 	return strings.Join(
 		slices.Collect(mapFunc(slices.Values(p.commands), func(c *exec.Cmd) string {

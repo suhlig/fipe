@@ -95,9 +95,19 @@ func mainE(args []string) error {
 		return err
 	}
 
+	_, err = io.Copy(os.Stderr, &stderr)
+
+	if err != nil {
+		return fmt.Errorf("copying stderr of last pipe command: %w", err)
+	}
+
 	_, err = io.Copy(os.Stdout, &stdout)
 
-	return err
+	if err != nil {
+		return fmt.Errorf("copying stdout of last pipe command: %w", err)
+	}
+
+	return nil
 }
 
 // copied from https://github.com/concourse/concourse/blob/6984e4d30a35f378d31d5897c5a6da2606b62f58/fly/commands/hijack.go/#L239-L252
