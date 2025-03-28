@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
+	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/concourse/concourse/fly/rc"
+	"github.com/suhlig/fly-vipe/pipeline"
 )
 
 func main() {
@@ -31,7 +36,7 @@ func mainE(args []string) error {
 
 	urlMap := parseUrlPath(u.Path)
 
-	target, teamName, err := rc.LoadTargetFromURL(fmt.Sprintf("%s://%s", u.Scheme, u.Host), urlMap["teams"], false)
+	target, targetName, err := rc.LoadTargetFromURL(fmt.Sprintf("%s://%s", u.Scheme, u.Host), urlMap["teams"], false)
 
 	if err != nil {
 		return err
@@ -43,9 +48,9 @@ func mainE(args []string) error {
 		return err
 	}
 
-	pipeline := urlMap["pipelines"]
+	pl := urlMap["pipelines"]
 
-	pipelineWithInstanceVars, err := pipelineWithInstanceVars(pipeline, u.Query())
+	pipelineWithInstanceVars, err := pipelineWithInstanceVars(pl, u.Query())
 
 	if err != nil {
 		return err
@@ -57,19 +62,41 @@ func mainE(args []string) error {
 		return err
 	}
 
-	script := fmt.Sprintf("fly --target %s get-pipeline --pipeline %s --team %s | vipe --suffix yaml | fly --target %s set-pipeline --pipeline %s --team %s --config %s", teamName, pipelineWithInstanceVars, target.Team().Name(), teamName, pipeline, target.Team().Name(), instanceVars)
+	p := pipeline.NewPipeline(
+		exec.Command("fly",
+			fmt.Sprintf("--target=%s", targetName),
+			"get-pipeline",
+			fmt.Sprintf("--pipeline=%s", pipelineWithInstanceVars),
+			fmt.Sprintf("--team=%s", target.Team().Name()),
+		),
+		exec.Command("vipe",
+			"--suffix=yaml",
+		),
+		exec.Command("fly",
+			slices.AppendSeq([]string{ // append another slice to a _literal_ slice of strings
+				fmt.Sprintf("--target=%s", targetName),
+				"set-pipeline",
+				fmt.Sprintf("--pipeline=%s", pl),
+				fmt.Sprintf("--team=%s", target.Team().Name()),
+				"--config=-",
+			}, slices.Values(instanceVars))...,
+		),
+	)
 
-	fmt.Println(script)
-
-	// TODO check if vipe is available
 	// TODO provide an option to just print the pipeline
-	// TODO launch it
-	// if err := syscall.Exec(pathToFly, args, os.Environ()); err != nil {
-	// 	fmt.Fprintf(os.Stderr, "apron-bus: Error - could not invoke %v: %v\n", pathToFly, err)
-	// 	os.Exit(1)
-	// }
+	fmt.Fprintf(os.Stderr, "Running the following pipeline:\n%s\n", p)
 
-	return nil
+	var stdout, stderr bytes.Buffer
+
+	err = p.Run(&stdout, &stderr)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(os.Stdout, &stdout)
+
+	return err
 }
 
 func pipelineWithInstanceVars(pipeline string, query url.Values) (string, error) {
@@ -106,9 +133,9 @@ func pipelineWithInstanceVars(pipeline string, query url.Values) (string, error)
 	return pipelineWithInstanceVars.String(), nil
 }
 
-func instanceVars(query url.Values) (string, error) {
+func instanceVars(query url.Values) ([]string, error) {
 	if len(query) == 0 {
-		return "", nil
+		return nil, nil
 	}
 
 	var instanceArgs []string
@@ -119,12 +146,12 @@ func instanceVars(query url.Values) (string, error) {
 		}
 
 		if len(v) > 1 {
-			return "", fmt.Errorf("parsing instance variables: expecting ecactly one value for %s, but found %d", k, len(v))
+			return nil, fmt.Errorf("parsing instance variables: expecting ecactly one value for %s, but found %d", k, len(v))
 		}
 
 		var instanceArg strings.Builder
 
-		instanceArg.WriteString("--instance-var ")
+		instanceArg.WriteString("--instance-var=")
 		instanceArg.WriteString(strings.TrimPrefix(k, "vars."))
 		instanceArg.WriteString("=")
 		instanceArg.WriteString(v[0])
@@ -132,7 +159,7 @@ func instanceVars(query url.Values) (string, error) {
 		instanceArgs = append(instanceArgs, instanceArg.String())
 	}
 
-	return strings.Join(instanceArgs, " "), nil
+	return instanceArgs, nil
 }
 
 // copied from https://github.com/concourse/concourse/blob/6984e4d30a35f378d31d5897c5a6da2606b62f58/fly/commands/hijack.go/#L239-L252
