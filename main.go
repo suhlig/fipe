@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/concourse/concourse/fly/rc"
+	"github.com/suhlig/fly-vipe/fly"
 	"github.com/suhlig/fly-vipe/pipeline"
 )
 
@@ -50,13 +51,13 @@ func mainE(args []string) error {
 
 	pl := urlMap["pipelines"]
 
-	pipelineWithInstanceVars, err := pipelineWithInstanceVars(pl, u.Query())
+	pipelineWithInstanceVars, err := fly.PipelineWithInstanceVars(pl, u.Query())
 
 	if err != nil {
 		return err
 	}
 
-	instanceVars, err := instanceVars(u.Query())
+	instanceVars, err := fly.InstanceVars(u.Query())
 
 	if err != nil {
 		return err
@@ -97,69 +98,6 @@ func mainE(args []string) error {
 	_, err = io.Copy(os.Stdout, &stdout)
 
 	return err
-}
-
-func pipelineWithInstanceVars(pipeline string, query url.Values) (string, error) {
-	var pipelineWithInstanceVars strings.Builder
-
-	pipelineWithInstanceVars.WriteString(pipeline)
-
-	if len(query) > 0 {
-		pipelineWithInstanceVars.WriteString("/")
-
-		var instanceArgs []string
-
-		for k, v := range query {
-			if !strings.HasPrefix(k, "vars.") {
-				continue
-			}
-
-			if len(v) > 1 {
-				return "", fmt.Errorf("parsing instance variables: expecting ecactly one value for %s, but found %d", k, len(v))
-			}
-
-			var pipelineWithInstanceVar strings.Builder
-
-			pipelineWithInstanceVar.WriteString(strings.TrimPrefix(k, "vars."))
-			pipelineWithInstanceVar.WriteString(":")
-			pipelineWithInstanceVar.WriteString(v[0])
-
-			instanceArgs = append(instanceArgs, pipelineWithInstanceVar.String())
-		}
-
-		pipelineWithInstanceVars.WriteString(strings.Join(instanceArgs, ","))
-	}
-
-	return pipelineWithInstanceVars.String(), nil
-}
-
-func instanceVars(query url.Values) ([]string, error) {
-	if len(query) == 0 {
-		return nil, nil
-	}
-
-	var instanceArgs []string
-
-	for k, v := range query {
-		if !strings.HasPrefix(k, "vars.") {
-			continue
-		}
-
-		if len(v) > 1 {
-			return nil, fmt.Errorf("parsing instance variables: expecting ecactly one value for %s, but found %d", k, len(v))
-		}
-
-		var instanceArg strings.Builder
-
-		instanceArg.WriteString("--instance-var=")
-		instanceArg.WriteString(strings.TrimPrefix(k, "vars."))
-		instanceArg.WriteString("=")
-		instanceArg.WriteString(v[0])
-
-		instanceArgs = append(instanceArgs, instanceArg.String())
-	}
-
-	return instanceArgs, nil
 }
 
 // copied from https://github.com/concourse/concourse/blob/6984e4d30a35f378d31d5897c5a6da2606b62f58/fly/commands/hijack.go/#L239-L252
